@@ -3,6 +3,7 @@ import datetime
 import json
 import time
 import os
+import random # Import modul random untuk memilih User-Agent secara acak
 
 # --- KONFIGURASI ---
 # Nama file konfigurasi tempat alamat-alamat wallet disimpan
@@ -15,8 +16,22 @@ API_URL = "https://app-prismax-backend-1053158761087.us-west2.run.app/api/daily-
 # 24 jam = 24 * 60 * 60 = 86400 detik
 CHECK_IN_INTERVAL_SECONDS = 86400 
 
-# Jeda antara setiap akun dalam satu siklus (disarankan untuk menghindari throttling)
+# Jeda antara setiap akun dalam satu siklus (disarankan untuk menghindari overloading API)
 DELAY_BETWEEN_WALLETS_SECONDS = 5 
+
+# Daftar User-Agent yang akan digunakan secara acak
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/126.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/126.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/125.0.0.0",
+    "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+]
 
 def load_wallet_addresses(config_file):
     """
@@ -48,12 +63,15 @@ def perform_daily_checkin(wallet_address):
     """
     today = datetime.date.today()
     user_local_date = today.strftime("%Y-%m-%d")
+    
+    # Pilih User-Agent secara acak dari daftar
+    random_user_agent = random.choice(USER_AGENTS)
 
     headers = {
         "Content-Type": "application/json",
         "Origin": "https://app.prismax.ai",
         "Referer": "https://app.prismax.ai/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36" 
+        "User-Agent": random_user_agent # Gunakan User-Agent yang dipilih secara acak
     }
 
     payload = {
@@ -61,7 +79,7 @@ def perform_daily_checkin(wallet_address):
         "user_local_date": user_local_date
     }
 
-    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Attempting daily check-in for wallet: {wallet_address} on date: {user_local_date}")
+    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Attempting daily check-in for wallet: {wallet_address} on date: {user_local_date} with User-Agent: {random_user_agent[:50]}...") # Tampilkan sebagian UA
 
     try:
         response = requests.post(API_URL, headers=headers, data=json.dumps(payload))
