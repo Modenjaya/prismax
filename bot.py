@@ -6,7 +6,7 @@ import signal
 import sys
 
 API_URL = "https://user.prismaxserver.com/api/daily-login-points"
-WALLETS_FILE = "config.txt"
+WALLETS_FILE = "wallets.txt"
 CYCLE_SECONDS = 24 * 60 * 60  # 24 jam
 
 running = True
