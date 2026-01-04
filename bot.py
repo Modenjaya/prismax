@@ -104,19 +104,26 @@ def sleep_until_next_cycle(start_time):
     remaining = max(0, CYCLE_SECONDS - elapsed)
 
     print(f"\n[{datetime.datetime.now()}] Cycle done. Sleeping {int(remaining/60)} minutes")
+    try:
+        while remaining > 0:
+            time.sleep(1)
+            remaining -= 1
+    except KeyboardInterrupt:
+        print("\n[EXIT] Sleep interrupted by user")
+        sys.exit(0)
 
-    while remaining > 0 and running:
-        time.sleep(min(60, remaining))
-        remaining -= 60
 
 def main_loop():
     print("[START] Prismax Daily Bot (24H MODE)")
-    while running:
-        start_time = time.time()
-        run_one_cycle()
-        sleep_until_next_cycle(start_time)
+    try:
+        while True:
+            start_time = time.time()
+            run_one_cycle()
+            sleep_until_next_cycle(start_time)
+    except KeyboardInterrupt:
+        print("\n[STOP] Bot stopped cleanly")
+        sys.exit(0)
 
-    print("[STOP] Bot stopped cleanly")
 
 if __name__ == "__main__":
     main_loop()
