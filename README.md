@@ -12,4 +12,5 @@ apt install -y \
   libasound2
 
 pip install playwright
+
 playwright install chromium
