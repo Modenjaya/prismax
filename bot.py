@@ -1,125 +1,122 @@
-import requests
+from playwright.sync_api import sync_playwright
 import datetime
-import json
+import random
 import time
-import os
-import random # Import modul random untuk memilih User-Agent secara acak
+import signal
+import sys
 
-# --- KONFIGURASI ---
-# Nama file konfigurasi tempat alamat-alamat wallet disimpan
-CONFIG_FILE = "config.txt"
+API_URL = "https://user.prismaxserver.com/api/daily-login-points"
+WALLETS_FILE = "config.txt"
+CYCLE_SECONDS = 24 * 60 * 60  # 24 jam
 
-# URL API Check-in
-API_URL = "https://app-prismax-backend-1053158761087.us-west2.run.app/api/daily-login-points"
+running = True
 
-# Waktu jeda antara setiap siklus check-in untuk semua akun (dalam detik)
-# 24 jam = 24 * 60 * 60 = 86400 detik
-CHECK_IN_INTERVAL_SECONDS = 86400 
+def handle_exit(sig, frame):
+    global running
+    print("\n[EXIT] Gracefully stopping bot...")
+    running = False
 
-# Jeda antara setiap akun dalam satu siklus (disarankan untuk menghindari overloading API)
-DELAY_BETWEEN_WALLETS_SECONDS = 5 
+signal.signal(signal.SIGINT, handle_exit)
+signal.signal(signal.SIGTERM, handle_exit)
 
-# Daftar User-Agent yang akan digunakan secara acak
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/126.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/126.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/125.0.0.0",
-    "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
-]
+def load_wallets():
+    with open(WALLETS_FILE) as f:
+        return [x.strip() for x in f if x.strip()]
 
-def load_wallet_addresses(config_file):
-    """
-    Memuat daftar alamat wallet dari file konfigurasi.
-    Setiap baris di file dianggap sebagai satu alamat wallet.
-    """
-    wallet_addresses = []
-    try:
-        with open(config_file, 'r') as f:
-            for line in f:
-                address = line.strip() # Hapus spasi di awal/akhir dan newline
-                if address and not address.startswith('#'): # Pastikan bukan baris kosong atau komentar
-                    wallet_addresses.append(address)
-        if not wallet_addresses:
-            print(f"ERROR: No wallet addresses found in '{config_file}'. Please add them, one per line.")
-            return None
-        return wallet_addresses
-    except FileNotFoundError:
-        print(f"ERROR: Configuration file '{config_file}' not found. Please create it and add your WALLET_ADDRESSes.")
-        return None
-    except Exception as e:
-        print(f"ERROR: An error occurred while reading '{config_file}': {e}")
-        return None
+def run_one_cycle():
+    wallets = load_wallets()
+    today = datetime.date.today().strftime("%Y-%m-%d")
 
-# --- FUNGSI BOT ---
-def perform_daily_checkin(wallet_address):
-    """
-    Melakukan permintaan check-in harian ke API Prismax AI untuk satu alamat wallet.
-    """
-    today = datetime.date.today()
-    user_local_date = today.strftime("%Y-%m-%d")
-    
-    # Pilih User-Agent secara acak dari daftar
-    random_user_agent = random.choice(USER_AGENTS)
+    print(f"\n[{datetime.datetime.now()}] Starting daily cycle")
+    print(f"Loaded {len(wallets)} wallets\n")
 
-    headers = {
-        "Content-Type": "application/json",
-        "Origin": "https://app.prismax.ai",
-        "Referer": "https://app.prismax.ai/",
-        "User-Agent": random_user_agent # Gunakan User-Agent yang dipilih secara acak
-    }
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--disable-extensions",
+                "--disable-background-networking",
+                "--disable-sync",
+                "--disable-default-apps",
+                "--disable-blink-features=AutomationControlled",
+            ]
+        )
 
-    payload = {
-        "wallet_address": wallet_address,
-        "user_local_date": user_local_date
-    }
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 720},
+            java_script_enabled=True,
+        )
 
-    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Attempting daily check-in for wallet: {wallet_address} on date: {user_local_date} with User-Agent: {random_user_agent[:50]}...") # Tampilkan sebagian UA
+        context.route(
+            "**/*",
+            lambda route, request:
+                route.abort()
+                if request.resource_type in ["image", "media", "font", "stylesheet"]
+                else route.continue_()
+        )
 
-    try:
-        response = requests.post(API_URL, headers=headers, data=json.dumps(payload))
-        response.raise_for_status()  # Akan memunculkan HTTPError untuk status kode 4xx/5xx
-        result = response.json()
+        page = context.new_page()
+        page.goto("https://app.prismax.ai", wait_until="domcontentloaded")
+        time.sleep(4)
 
-        if result.get("success"):
-            data = result.get("data", {})
-            if data.get("already_claimed_daily"):
-                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] SUCCESS [{wallet_address}]: Already claimed daily check-in for today. Total points: {data.get('total_points')}")
-            else:
-                print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] SUCCESS [{wallet_address}]: Daily check-in complete! Points awarded today: {data.get('points_awarded_today')}. Total points: {data.get('total_points')}")
-        else:
-            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] FAILED [{wallet_address}]: API returned success=false. Message: {result.get('message', 'No message provided')}")
-            print(f"Response: {result}")
+        for wallet in wallets:
+            payload = {
+                "wallet_address": wallet,
+                "chain": "solana",
+                "user_local_date": today
+            }
 
-    except requests.exceptions.HTTPError as errh:
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] HTTP Error [{wallet_address}]: {errh}")
-    except requests.exceptions.ConnectionError as errc:
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Connection Error [{wallet_address}]: {errc}")
-    except requests.exceptions.Timeout as errt:
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Timeout Error [{wallet_address}]: {errt}")
-    except requests.exceptions.RequestException as err:
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] An unexpected error occurred [{wallet_address}]: {err}")
-    except json.JSONDecodeError:
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] FAILED [{wallet_address}]: Could not decode JSON response. Response text: {response.text}")
+            try:
+                result = page.evaluate(
+                    """async ({url, data}) => {
+                        const r = await fetch(url, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(data)
+                        });
+                        return await r.json();
+                    }""",
+                    {"url": API_URL, "data": payload}
+                )
+
+                if result.get("success"):
+                    d = result["data"]
+                    if d["already_claimed_daily"]:
+                        print(f"[OK] {wallet} → already claimed | total {d['total_points']}")
+                    else:
+                        print(f"[CLAIMED] {wallet} +{d['points_awarded_today']} | total {d['total_points']}")
+                else:
+                    print(f"[FAIL] {wallet} → {result}")
+
+            except Exception as e:
+                print(f"[ERROR] {wallet} → {e}")
+
+            time.sleep(random.uniform(4, 6))
+
+        browser.close()
+
+def sleep_until_next_cycle(start_time):
+    elapsed = time.time() - start_time
+    remaining = max(0, CYCLE_SECONDS - elapsed)
+
+    print(f"\n[{datetime.datetime.now()}] Cycle done. Sleeping {int(remaining/60)} minutes")
+
+    while remaining > 0 and running:
+        time.sleep(min(60, remaining))
+        remaining -= 60
+
+def main_loop():
+    print("[START] Prismax Daily Bot (24H MODE)")
+    while running:
+        start_time = time.time()
+        run_one_cycle()
+        sleep_until_next_cycle(start_time)
+
+    print("[STOP] Bot stopped cleanly")
 
 if __name__ == "__main__":
-    while True: # Loop utama agar skrip berjalan terus-menerus
-        wallet_addresses = load_wallet_addresses(CONFIG_FILE)
-        if wallet_addresses:
-            print(f"\n--- [{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Starting daily check-in cycle for {len(wallet_addresses)} wallet(s). ---")
-            for i, address in enumerate(wallet_addresses):
-                perform_daily_checkin(address)
-                if i < len(wallet_addresses) - 1: # Jangan tidur setelah wallet terakhir
-                    # Jeda antara setiap akun dalam satu siklus
-                    time.sleep(DELAY_BETWEEN_WALLETS_SECONDS) 
-            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] All wallet check-ins attempted for this cycle.")
-        else:
-            print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] No wallets loaded. Retrying after interval.")
-
-        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Waiting for {CHECK_IN_INTERVAL_SECONDS / 3600:.1f} hours ({CHECK_IN_INTERVAL_SECONDS} seconds) before next cycle...")
-        time.sleep(CHECK_IN_INTERVAL_SECONDS) # Jeda panjang sebelum siklus berikutnya
+    main_loop()
